@@ -1,13 +1,12 @@
 import { createServer } from 'node:http';
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 
 const root = process.cwd();
 const dataDirectory = join(root, 'data');
 const stateFile = join(dataDirectory, 'state.json');
+const webhookTokenFile = join(dataDirectory, 'webhook-token');
 const pendingSms = new Map();
-const smsSecret = process.env.PANTRY_PILOT_SMS_WEBHOOK_SECRET;
 const mime = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -26,6 +25,11 @@ async function loadState() {
   }
 }
 
+async function webhookToken() {
+  try { return (await readFile(webhookTokenFile, 'utf8')).trim(); }
+  catch { return ''; }
+}
+
 const app = async (request, response) => {
   if (request.url === '/api/auth/pending' && request.method === 'POST') {
     let body = '';
@@ -40,22 +44,21 @@ const app = async (request, response) => {
     });
     return;
   }
-  if (request.url === '/api/webhooks/crazytel' && request.method === 'POST') {
+  if (request.url?.startsWith('/api/webhooks/crazytel') && request.method === 'POST') {
     let raw = '';
     request.on('data', chunk => { raw += chunk; });
-    request.on('end', () => {
+    request.on('end', async () => {
       try {
-        if (!smsSecret) throw new Error('Webhook is not configured');
-        const signature = request.headers['x-crazyapi-signature'];
-        const timestamp = request.headers['x-crazyapi-timestamp'];
-        if (typeof timestamp !== 'string' || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) throw new Error('Stale callback');
-        const expected = createHmac('sha256', smsSecret).update(`${timestamp}.${raw}`).digest('hex');
-        if (typeof signature !== 'string' || signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) throw new Error('Invalid signature');
-        const payload = JSON.parse(raw);
-        const did = String(payload.original_did || payload.to || payload.did || '').replace(/\D/g, '');
+        const token = new URL(request.url, 'http://localhost').searchParams.get('token');
+        if (!token || token !== await webhookToken()) throw new Error('Invalid token');
+        const payload = new URLSearchParams(raw);
+        const did = String(payload.get('original_did') || payload.get('to') || payload.get('did') || '').replace(/\D/g, '');
         const pending = pendingSms.get(did);
-        const code = String(payload.message || payload.text || payload.body || payload.sms?.text || '').match(/\b\d{4,8}\b/)?.[0];
-        if (!pending || pending.expiresAt < Date.now() || !code) throw new Error('No matching authentication request');
+        const code = String(payload.get('message') || payload.get('text') || payload.get('body') || '').match(/\b\d{4,8}\b/)?.[0];
+        if (!pending || pending.expiresAt < Date.now() || !code) {
+          response.writeHead(204).end();
+          return;
+        }
         pendingSms.delete(did);
         response.writeHead(204).end();
       } catch { response.writeHead(401).end('Rejected'); }
@@ -104,9 +107,9 @@ createServer(app).listen(process.env.PORT || 4173, () => {
   console.log(`Pantry Pilot running at http://localhost:${process.env.PORT || 4173}`);
 });
 
-// Public listener: intentionally exposes only the signed Crazytel callback.
+// Public listener: intentionally exposes only the token-protected Crazytel callback.
 createServer((request, response) => {
-  if (request.url !== '/api/webhooks/crazytel') return response.writeHead(404).end('Not found');
+  if (!request.url?.startsWith('/api/webhooks/crazytel')) return response.writeHead(404).end('Not found');
   return app(request, response);
 }).listen(10000, () => {
   console.log('Crazytel webhook listener running at http://127.0.0.1:10000/api/webhooks/crazytel');
