@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#173f35" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <title>Pantry Pilot</title>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="#dashboard" aria-label="Pantry Pilot">pantry<span>pilot</span></a>
+        <div class="top-actions"><select id="locale" aria-label="Language"><option value="en">English</option><option value="pt">Português</option><option value="es">Español</option></select><div class="household"><span class="presence"></span>Casa Santos <small>4 perfis ativos</small></div></div>
+      </header>
+      <nav class="nav" aria-label="Navegação principal">
+        <button class="nav-item active" data-view="dashboard">Resumo</button>
+        <button class="nav-item" data-view="list">Lista</button>
+        <button class="nav-item" data-view="pantry">Estoque</button>
+        <button class="nav-item" data-view="offers">Ofertas</button>
+        <button class="nav-item" data-view="profiles">Perfis</button>
+      </nav>
+      <section id="app" aria-live="polite"></section>
+    </main>
+    <dialog id="modal"></dialog>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

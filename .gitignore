@@ -1,0 +1,13 @@
+# Runtime and local data
+node_modules/
+.env
+.env.*
+!.env.example
+data/
+*.sqlite
+*.sqlite3
+*.db
+
+# Editor and OS files
+.DS_Store
+.vscode/
