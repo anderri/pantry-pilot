@@ -26,7 +26,7 @@ async function loadState() {
   }
 }
 
-createServer(async (request, response) => {
+const app = async (request, response) => {
   if (request.url === '/api/auth/pending' && request.method === 'POST') {
     let body = '';
     request.on('data', chunk => { body += chunk; });
@@ -98,6 +98,16 @@ createServer(async (request, response) => {
   } catch {
     response.writeHead(404).end('Not found');
   }
-}).listen(process.env.PORT || 4173, () => {
+};
+
+createServer(app).listen(process.env.PORT || 4173, () => {
   console.log(`Pantry Pilot running at http://localhost:${process.env.PORT || 4173}`);
+});
+
+// Public listener: intentionally exposes only the signed Crazytel callback.
+createServer((request, response) => {
+  if (request.url !== '/api/webhooks/crazytel') return response.writeHead(404).end('Not found');
+  return app(request, response);
+}).listen(10000, () => {
+  console.log('Crazytel webhook listener running at http://127.0.0.1:10000/api/webhooks/crazytel');
 });
