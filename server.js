@@ -32,28 +32,31 @@ createServer(async (request, response) => {
     request.on('data', chunk => { body += chunk; });
     request.on('end', () => {
       try {
-        const { accountId } = JSON.parse(body);
-        if (!accountId) throw new Error('Missing account');
-        pendingSms.set(String(accountId), { expiresAt: Date.now() + 5 * 60_000 });
+        const { accountId, did } = JSON.parse(body);
+        if (!accountId || !did) throw new Error('Missing account or DID');
+        pendingSms.set(String(did).replace(/\D/g, ''), { accountId: String(accountId), expiresAt: Date.now() + 5 * 60_000 });
         response.writeHead(204).end();
       } catch { response.writeHead(400).end('Invalid request'); }
     });
     return;
   }
-  if (request.url === '/api/webhooks/sms' && request.method === 'POST') {
+  if (request.url === '/api/webhooks/crazytel' && request.method === 'POST') {
     let raw = '';
     request.on('data', chunk => { raw += chunk; });
     request.on('end', () => {
       try {
         if (!smsSecret) throw new Error('Webhook is not configured');
-        const signature = request.headers['x-pantry-signature'];
-        const expected = createHmac('sha256', smsSecret).update(raw).digest('hex');
+        const signature = request.headers['x-crazyapi-signature'];
+        const timestamp = request.headers['x-crazyapi-timestamp'];
+        if (typeof timestamp !== 'string' || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) throw new Error('Stale callback');
+        const expected = createHmac('sha256', smsSecret).update(`${timestamp}.${raw}`).digest('hex');
         if (typeof signature !== 'string' || signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) throw new Error('Invalid signature');
         const payload = JSON.parse(raw);
-        const pending = pendingSms.get(String(payload.accountId));
-        const code = String(payload.message || '').match(/\b\d{4,8}\b/)?.[0];
+        const did = String(payload.original_did || payload.to || payload.did || '').replace(/\D/g, '');
+        const pending = pendingSms.get(did);
+        const code = String(payload.message || payload.text || payload.body || payload.sms?.text || '').match(/\b\d{4,8}\b/)?.[0];
         if (!pending || pending.expiresAt < Date.now() || !code) throw new Error('No matching authentication request');
-        pendingSms.delete(String(payload.accountId));
+        pendingSms.delete(did);
         response.writeHead(204).end();
       } catch { response.writeHead(401).end('Rejected'); }
     });

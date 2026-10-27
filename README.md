@@ -47,4 +47,6 @@ Para acesso no iPhone dentro da rede Tailscale, use Tailscale Serve com HTTPS; n
 
 ### Webhook SMS 2FA
 
-O serviço disponibiliza `POST /api/webhooks/sms` para o provedor de SMS virtual. Ele só é ativado quando a variável `PANTRY_PILOT_SMS_WEBHOOK_SECRET` estiver configurada. O provedor deve enviar o cabeçalho `x-pantry-signature`, com HMAC SHA-256 do corpo JSON, e um payload com `accountId` e `message`. O código é aceito apenas se houver uma autenticação pendente para aquela conta e é descartado em memória logo após a validação.
+O serviço disponibiliza `POST /api/webhooks/crazytel` para o provedor de SMS virtual. Ele só é ativado quando a variável `PANTRY_PILOT_SMS_WEBHOOK_SECRET` estiver configurada. A assinatura segue a Crazytel: `X-CrazyAPI-Timestamp` e `X-CrazyAPI-Signature`, HMAC SHA-256 de `timestamp + "." + corpo JSON`. O código é aceito apenas se houver uma autenticação pendente para o DID configurado e é descartado em memória logo após a validação.
+
+> A Crazytel exige uma URL HTTPS publicamente acessível para webhooks. Mantenha o app na tailnet privada e exponha exclusivamente a rota de webhook por um proxy/túnel com regras de acesso e assinatura HMAC.
