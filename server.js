@@ -1,10 +1,13 @@
 import { createServer } from 'node:http';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 
 const root = process.cwd();
 const dataDirectory = join(root, 'data');
 const stateFile = join(dataDirectory, 'state.json');
+const pendingSms = new Map();
+const smsSecret = process.env.PANTRY_PILOT_SMS_WEBHOOK_SECRET;
 const mime = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -24,6 +27,38 @@ async function loadState() {
 }
 
 createServer(async (request, response) => {
+  if (request.url === '/api/auth/pending' && request.method === 'POST') {
+    let body = '';
+    request.on('data', chunk => { body += chunk; });
+    request.on('end', () => {
+      try {
+        const { accountId } = JSON.parse(body);
+        if (!accountId) throw new Error('Missing account');
+        pendingSms.set(String(accountId), { expiresAt: Date.now() + 5 * 60_000 });
+        response.writeHead(204).end();
+      } catch { response.writeHead(400).end('Invalid request'); }
+    });
+    return;
+  }
+  if (request.url === '/api/webhooks/sms' && request.method === 'POST') {
+    let raw = '';
+    request.on('data', chunk => { raw += chunk; });
+    request.on('end', () => {
+      try {
+        if (!smsSecret) throw new Error('Webhook is not configured');
+        const signature = request.headers['x-pantry-signature'];
+        const expected = createHmac('sha256', smsSecret).update(raw).digest('hex');
+        if (typeof signature !== 'string' || signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) throw new Error('Invalid signature');
+        const payload = JSON.parse(raw);
+        const pending = pendingSms.get(String(payload.accountId));
+        const code = String(payload.message || '').match(/\b\d{4,8}\b/)?.[0];
+        if (!pending || pending.expiresAt < Date.now() || !code) throw new Error('No matching authentication request');
+        pendingSms.delete(String(payload.accountId));
+        response.writeHead(204).end();
+      } catch { response.writeHead(401).end('Rejected'); }
+    });
+    return;
+  }
   if (request.url === '/api/state' && request.method === 'GET') {
     response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     response.end(await loadState());
